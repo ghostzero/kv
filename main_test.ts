@@ -16,11 +16,11 @@ Deno.test(async function testKv() {
 
     assertEquals(true, res.ok)
 
-    const entry1 = await kv.set(key, {name: 'GhostZero'})
-    assertEquals('GhostZero', entry1.value.name)
+    const entry1 = await kv.set(key, {name: 'GhostZero2'})
+    assertEquals('GhostZero2', entry1.value.name)
 
     const entry2 = await kv.get<User>(key)
-    assertEquals('GhostZero', entry2.value.name)
+    assertEquals('GhostZero2', entry2.value.name)
 
 
     const result = await kv.getMany<User[]>([
