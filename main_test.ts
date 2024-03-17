@@ -8,24 +8,24 @@ interface User {
 Deno.test(async function testKv() {
     const kv = simpleKv('9b9634a1-1655-4baf-bdf5-c04feffc68bd')
 
-    const key = ['users', '1']
+    const key = ['users', 'ghostzero']
     const res = await kv.atomic()
         .check({key, version: null}) // `null` version mean 'no value'
-        .set(key, {name: 'ada'})
+        .set(key, {name: 'GhostZero'})
         .commit()
 
     assertEquals(true, res.ok)
 
-    const entry1 = await kv.set(key, {name: 'grace'})
-    assertEquals('grace', entry1.value.name)
+    const entry1 = await kv.set(key, {name: 'GhostZero'})
+    assertEquals('GhostZero', entry1.value.name)
 
     const entry2 = await kv.get<User>(key)
-    assertEquals('grace', entry2.value.name)
+    assertEquals('GhostZero', entry2.value.name)
 
 
     const result = await kv.getMany<User[]>([
         key,
-        ['users', 'grace'],
+        ['users', 'gz_qa'],
     ])
 
     assertEquals(result.length, 2)
@@ -37,6 +37,6 @@ Deno.test(async function testKv() {
         assertEquals('users', entry.key[0])
     }
 
-    const deleted = await kv.delete(['users', '2'])
+    const deleted = await kv.delete(['users', 'ghostzero'])
     assertEquals(true, deleted)
 })
