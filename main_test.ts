@@ -1,0 +1,42 @@
+import { assertEquals } from 'https://deno.land/std@0.220.0/assert/mod.ts'
+import { simpleKv } from './main.ts'
+
+interface User {
+    name: string;
+}
+
+Deno.test(async function testKv() {
+    const kv = simpleKv('9b9634a1-1655-4baf-bdf5-c04feffc68bd')
+
+    const key = ['users', '1']
+    const res = await kv.atomic()
+        .check({key, version: null}) // `null` version mean 'no value'
+        .set(key, {name: 'ada'})
+        .commit()
+
+    assertEquals(true, res.ok)
+
+    const entry1 = await kv.set(key, {name: 'grace'})
+    assertEquals('grace', entry1.value.name)
+
+    const entry2 = await kv.get<User>(key)
+    assertEquals('grace', entry2.value.name)
+
+
+    const result = await kv.getMany<User[]>([
+        key,
+        ['users', 'grace'],
+    ])
+
+    assertEquals(result.length, 2)
+    assertEquals(result[1].value, null)
+    assertEquals(result[1].version, null)
+
+    const entries = await kv.list<User>({prefix: ['users']})
+    for await (const entry of entries) {
+        assertEquals('users', entry.key[0])
+    }
+
+    const deleted = await kv.delete(['users', '2'])
+    assertEquals(true, deleted)
+})
