@@ -44,18 +44,24 @@ export class AtomicOperation {
 /**
  * Connect to the simple key-value store.
  *
- * @param accessToken - The access token
  * @param options - The options
  */
-export function simpleKv(accessToken: string, options: KvOptions = {}): Kv {
+export function connect(options: KvOptions = {}): Kv {
     const _options = defu(options, {
-        url: "http://localhost:5832/api/",
+        accessToken: null,
+        endpoint: null,
+        region: "eu-central-1",
         headers: {
             "Content-Type": "application/json",
             "Accept": "application/json",
         },
     });
-    const url = `${_options.url}${accessToken}`;
+    if (!_options.accessToken) {
+        throw new Error("Access token is required");
+    }
+    const url: string = !_options.endpoint
+        ? `https://kv.${_options.region}.kv-db.dev/v1/${_options.accessToken}`
+        : `${_options.endpoint}/v1/${_options.accessToken}`;
     return {
         async get<T = KvValue>(key: KvKey): Promise<Entry<T>> {
             const response: AxiosResponse<Entry<T>> = await axios.get(
@@ -174,6 +180,8 @@ export interface KvCommitResult {
 }
 
 export interface KvOptions {
-    url?: string;
+    accessToken?: string;
+    endpoint?: string;
+    region?: string;
     headers?: Record<string, string>;
 }

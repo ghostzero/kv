@@ -1,12 +1,15 @@
 import { assertEquals } from '@std/assert'
-import { Entry, simpleKv } from './mod.ts'
+import { connect } from './mod.ts'
 
 interface User {
     name: string;
 }
 
 Deno.test(async function testKv() {
-    const kv = simpleKv('9b9634a1-1655-4baf-bdf5-c04feffc68bd')
+    const kv = connect({
+        endpoint: 'http://localhost:8000/api',
+        accessToken: '9b9634a1-1655-4baf-bdf5-c04feffc68bd',
+    })
 
     const key = ['users', 'ghostzero']
     const res = await kv.atomic()
