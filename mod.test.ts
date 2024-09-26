@@ -1,5 +1,5 @@
-import { assertEquals } from 'https://deno.land/std@0.220.0/assert/mod.ts'
-import { simpleKv } from './main.ts'
+import { assertEquals } from '@std/assert'
+import { simpleKv } from './mod.ts'
 
 interface User {
     name: string;
