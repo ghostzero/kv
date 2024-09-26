@@ -9,6 +9,7 @@ export class AtomicOperation {
     private operations: KvOperation[] = [];
 
     constructor(private url: string) {
+        // Empty
     }
 
     check(...checks: AtomicCheck[]): this {
@@ -56,7 +57,7 @@ export function simpleKv(accessToken: string, options: KvOptions = {}): Kv {
     });
     const url = `${_options.url}${accessToken}`;
     return {
-        async get<T = unknown>(key: KvKey): Promise<Entry<T>> {
+        async get<T = KvValue>(key: KvKey): Promise<Entry<T>> {
             const response: AxiosResponse<Entry<T>> = await axios.get(
                 `${url}/${key.join("/")}`,
                 {
@@ -65,14 +66,14 @@ export function simpleKv(accessToken: string, options: KvOptions = {}): Kv {
             );
             return response.data;
         },
-        getMany<T extends readonly unknown[]>(
+        getMany<T = KvValue>(
             keys: KvKey[],
         ): Promise<Entry<T>[]> {
             return Promise.all(
                 keys.map((key: KvKey) => this.get(key) as Promise<Entry<T>>),
             );
         },
-        async list<T = unknown>(
+        async list<T = KvValue>(
             selector: KvListSelector,
         ): Promise<KvListIterator<T>> {
             const response: AxiosResponse<Entry<T>[]> = await axios.get(url, {
@@ -87,7 +88,7 @@ export function simpleKv(accessToken: string, options: KvOptions = {}): Kv {
                 },
             } as KvListIterator<T>;
         },
-        async set(key: KvKey, value: KvValue): Promise<Entry> {
+        async set<T = KvValue>(key: KvKey, value: T): Promise<Entry<T>> {
             const response = await axios.put(`${url}/${key.join("/")}`, {
                 value,
             }, {
@@ -115,17 +116,23 @@ export function simpleKv(accessToken: string, options: KvOptions = {}): Kv {
 }
 
 export interface Kv {
-    get<T = unknown>(key: KvKey): Promise<Entry<T>>;
-    getMany<T extends readonly unknown[]>(keys: KvKey[]): Promise<Entry<T>[]>;
-    list<T = unknown>(selector: KvListSelector): Promise<KvListIterator<T>>;
-    set(key: KvKey, value: KvValue): Promise<Entry>;
+    get<T = KvValue>(key: KvKey): Promise<Entry<T>>;
+    getMany<T = KvValue>(keys: KvKey[]): Promise<Entry<T>[]>;
+    list<T = KvValue>(selector: KvListSelector): Promise<KvListIterator<T>>;
+    set<T = KvValue>(key: KvKey, value: T): Promise<Entry<T>>;
     atomic(): AtomicOperation;
     delete(key: KvKey): Promise<boolean>;
 }
 
 export type KvKey = string[];
 
-export type KvValue = string | number | boolean | null | Record<string, unknown> | unknown[];
+export type KvValue =
+    | string
+    | number
+    | boolean
+    | null
+    | Record<string, unknown>
+    | unknown[];
 
 export interface KvListSelector {
     prefix?: KvKey;

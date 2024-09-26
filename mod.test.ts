@@ -1,5 +1,5 @@
 import { assertEquals } from '@std/assert'
-import { simpleKv } from './mod.ts'
+import { Entry, simpleKv } from './mod.ts'
 
 interface User {
     name: string;
@@ -23,7 +23,7 @@ Deno.test(async function testKv() {
     assertEquals('GhostZero2', entry2.value.name)
 
 
-    const result = await kv.getMany<User[]>([
+    const result = await kv.getMany<User>([
         key,
         ['users', 'gz_qa'],
     ])
