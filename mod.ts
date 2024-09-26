@@ -2,7 +2,8 @@ import axios, { type AxiosResponse } from "npm:axios@1.6.2";
 import { defu } from "npm:defu@6.1.4";
 
 /**
- * Represents an Atomic operation.
+ * Create an atomic operation. Atomic operations allow you to perform multiple
+ * operations in a single transaction.
  */
 export class AtomicOperation {
     private checks: AtomicCheck[] = [];
@@ -12,16 +13,43 @@ export class AtomicOperation {
         // Empty
     }
 
+    /**
+     * Add a check to the atomic operation.
+     *
+     * @param checks - The checks to perform
+     *
+     * @example
+     * ```ts
+     * const key = ['users', 'ghostzero']
+     * const res = await kv.atomic()
+     *    .check({key, version: null}) // `null` version mean 'no value'
+     *    .set(key, {name: 'GhostZero'})
+     *    .commit()
+     *
+     * console.log(res.ok)
+     * ```
+     */
     check(...checks: AtomicCheck[]): this {
         this.checks.push(...checks);
         return this;
     }
 
+    /**
+     * Set a value in the key-value store.
+     *
+     * @param key - The key of the entry
+     * @param value - The value of the entry
+     */
     set(key: KvKey, value: KvValue): this {
         this.operations.push({ type: "set", key, value });
         return this;
     }
 
+    /**
+     * Delete a value from the key-value store.
+     *
+     * @param key - The key of the entry
+     */
     delete(key: KvKey): this {
         this.operations.push({ type: "delete", key });
         return this;
@@ -44,7 +72,19 @@ export class AtomicOperation {
 /**
  * Connect to the simple key-value store.
  *
- * @param options - The options
+ * @param options - The options to use when connecting
+ *
+ * @example
+ * ```ts
+ * const kv = connect({
+ *    accessToken: '9b9634a1-1655-4baf-bdf5-c04feffc68bd',
+ * })
+ *
+ * const key = ['users', 'ghostzero']
+ * const res = await kv.set(key, {name: 'GhostZero'})
+ *
+ * console.log(res.value.name) // GhostZero
+ * ```
  */
 export function connect(options: KvOptions = {}): Kv {
     const _options = defu(options, {
@@ -121,17 +161,62 @@ export function connect(options: KvOptions = {}): Kv {
     };
 }
 
+/**
+ * @module
+ *
+ * This module provides a simple key-value store client for Deno and other JavaScript/TypeScript runtimes.
+ */
 export interface Kv {
+    /**
+     * Get an entry from the key-value store.
+     *
+     * @param key - The key of the entry
+     */
     get<T = KvValue>(key: KvKey): Promise<Entry<T>>;
+
+    /**
+     * Get multiple entries from the key-value store.
+     *
+     * @param keys - The keys of the entries
+     */
     getMany<T = KvValue>(keys: KvKey[]): Promise<Entry<T>[]>;
+
+    /**
+     * List entries from the key-value store.
+     *
+     * @param selector - The selector to use when listing entries
+     */
     list<T = KvValue>(selector: KvListSelector): Promise<KvListIterator<T>>;
+
+    /**
+     * Set an entry in the key-value store.
+     *
+     * @param key - The key of the entry
+     * @param value - The value of the entry
+     */
     set<T = KvValue>(key: KvKey, value: T): Promise<Entry<T>>;
+
+    /**
+     * Create an atomic operation.
+     */
     atomic(): AtomicOperation;
+
+    /**
+     * Delete an entry from the key-value store.
+     *
+     * @param key - The key of the entry
+     */
     delete(key: KvKey): Promise<boolean>;
 }
 
+/**
+ * The key of an entry in the key-value store.
+ */
 export type KvKey = string[];
 
+/**
+ * The value of an entry in the key-value store.
+ */
 export type KvValue =
     | string
     | number
@@ -140,6 +225,9 @@ export type KvValue =
     | Record<string, unknown>
     | unknown[];
 
+/**
+ * Key-value list selector.
+ */
 export interface KvListSelector {
     prefix?: KvKey;
     limit?: number;
@@ -147,38 +235,62 @@ export interface KvListSelector {
     reverse?: boolean;
 }
 
+/**
+ * The operation to perform in the key-value store.
+ */
 export type KvOperation = KvSetOperation | KvDeleteOperation;
 
+/**
+ * Set operation to update an entry in the key-value store.
+ */
 export interface KvSetOperation {
     type: "set";
     key: KvKey;
     value: KvValue;
 }
 
+/**
+ * Delete operation to remove an entry from the key-value store.
+ */
 export interface KvDeleteOperation {
     type: "delete";
     key: KvKey;
 }
 
+/**
+ * Key-value list iterator.
+ */
 export interface KvListIterator<T = unknown> extends AsyncIterable<Entry<T>> {
     [Symbol.asyncIterator](): AsyncIterator<Entry<T>>;
 }
 
+/**
+ * Represents an entry in the key-value store.
+ */
 export interface Entry<T = unknown> {
     key: KvKey;
     value: T;
     version: string | null;
 }
 
+/**
+ * The atomic check to perform in the key-value store.
+ */
 export interface AtomicCheck {
     key: KvKey;
     version: string | null;
 }
 
+/**
+ * The result of an atomic commit in the key-value store.
+ */
 export interface KvCommitResult {
     ok: boolean;
 }
 
+/**
+ * Key-value client options.
+ */
 export interface KvOptions {
     accessToken?: string;
     endpoint?: string;
