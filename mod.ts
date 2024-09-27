@@ -99,8 +99,11 @@ export function connect(options: KvOptions): Kv {
             "Authorization": `Bearer ${options.accessToken}`,
         },
     });
+    if (!_options.bucket) {
+        throw new Error("The `bucket` option is required");
+    }
     if (!_options.accessToken) {
-        throw new Error("Access token is required");
+        throw new Error("The `accessToken` option is required");
     }
     const url: string = !_options.endpoint
         ? `https://kv.${_options.region}.kv-db.dev/v1/${_options.bucket}`

@@ -33,6 +33,7 @@ Here we define a User interface with a name and an email for example.
 
 ```typescript
 interface User {
+    id: string;
     name: string;
     email: string;
 }
@@ -46,7 +47,7 @@ create a unique key.
 
 ```typescript
 const key = ['users', '1'];
-const value: User = {name: 'GhostZero', email: 'example@example.com'};
+const value: User = {id: '1', name: 'GhostZero', email: 'example@example.com'};
 await kv.set(key, value);
 ```
 
@@ -79,7 +80,7 @@ transaction. If any of the operations fail, the entire transaction is rolled bac
 
 ```typescript
 const key = ['users', '1'];
-const value: User = {name: 'GhostZero', email: 'example@example.com'};
+const value: User = {id: '1', name: 'GhostZero', email: 'example@example.com'};
 
 const res = kv.atomic()
     .check({key, version: null /* or a version */})
