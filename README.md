@@ -20,6 +20,7 @@ To open the key-value store, run the following command:
 import { connect } from "@gz/kv";
 
 const kv = connect({
+    bucket: '9d1cb4c7-c683-4fa9-bc5f-13f5ad1ba745',
     accessToken: '9b9634a1-1655-4baf-bdf5-c04feffc68bd',
     region: 'eu-central-1'
 });

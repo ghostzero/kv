@@ -1,4 +1,4 @@
-import axios, { type AxiosResponse } from "npm:axios@1.6.2";
+import axios, { type AxiosResponse } from "npm:axios@1.7.7";
 import { defu } from "npm:defu@6.1.4";
 
 /**
@@ -77,6 +77,7 @@ export class AtomicOperation {
  * @example
  * ```ts
  * const kv = connect({
+ *    bucket: '9d1cb4c7-c683-4fa9-bc5f-13f5ad1ba745',
  *    accessToken: '9b9634a1-1655-4baf-bdf5-c04feffc68bd',
  * })
  *
@@ -86,22 +87,24 @@ export class AtomicOperation {
  * console.log(res.value.name) // GhostZero
  * ```
  */
-export function connect(options: KvOptions = {}): Kv {
+export function connect(options: KvOptions): Kv {
     const _options = defu(options, {
         accessToken: null,
         endpoint: null,
+        bucket: null,
         region: "eu-central-1",
         headers: {
             "Content-Type": "application/json",
             "Accept": "application/json",
+            "Authorization": `Bearer ${options.accessToken}`,
         },
     });
     if (!_options.accessToken) {
         throw new Error("Access token is required");
     }
     const url: string = !_options.endpoint
-        ? `https://kv.${_options.region}.kv-db.dev/v1/${_options.accessToken}`
-        : `${_options.endpoint}/v1/${_options.accessToken}`;
+        ? `https://kv.${_options.region}.kv-db.dev/v1/${_options.bucket}`
+        : `${_options.endpoint}/v1/${_options.bucket}`;
     return {
         async get<T = KvValue>(key: KvKey): Promise<Entry<T>> {
             const response: AxiosResponse<Entry<T>> = await axios.get(
@@ -270,7 +273,7 @@ export interface KvListIterator<T = unknown> extends AsyncIterable<Entry<T>> {
 export interface Entry<T = unknown> {
     key: KvKey;
     value: T;
-    version: string | null;
+    version: number | null;
 }
 
 /**
@@ -278,7 +281,7 @@ export interface Entry<T = unknown> {
  */
 export interface AtomicCheck {
     key: KvKey;
-    version: string | null;
+    version: number | null;
 }
 
 /**
@@ -292,7 +295,8 @@ export interface KvCommitResult {
  * Key-value client options.
  */
 export interface KvOptions {
-    accessToken?: string;
+    bucket: string;
+    accessToken: string;
     endpoint?: string;
     region?: string;
     headers?: Record<string, string>;

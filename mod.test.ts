@@ -2,13 +2,15 @@ import { assertEquals } from '@std/assert'
 import { connect } from './mod.ts'
 
 interface User {
+    id: string;
     name: string;
 }
 
 Deno.test(async function testKv() {
     const kv = connect({
         endpoint: 'http://localhost:8000/api',
-        accessToken: '9b9634a1-1655-4baf-bdf5-c04feffc68bd',
+        bucket: '9d1cb4c7-c683-4fa9-bc5f-13f5ad1ba745',
+        accessToken: '694a907a-6eb8-4389-9a4c-f4b665e142eb',
     })
 
     const key = ['users', 'ghostzero']
@@ -19,7 +21,7 @@ Deno.test(async function testKv() {
 
     assertEquals(true, res.ok)
 
-    const entry1 = await kv.set(key, {name: 'GhostZero2'})
+    const entry1 = await kv.set<User>(key, {id: 'ghostzero', name: 'GhostZero2'})
     assertEquals('GhostZero2', entry1.value.name)
 
     const entry2 = await kv.get<User>(key)
