@@ -139,8 +139,9 @@ returns a new encryption key. You can then export the key using the `exportCrypt
 
 The exported key is a Base64-encoded string that you can store in a secure location and import later.
 
-> [!IMPORTANT]
-> 
+> [!CAUTION]
+> Make sure to store the encryption key in a secure location. If you lose the encryption key, you will not be able to
+> decrypt the encrypted data. The Key-Value Store does not store the encryption key!
 
 ```typescript
 import { generateCryptoKey, exportCryptoKey } from "@gz/kv";
@@ -159,9 +160,9 @@ To use the encryption key, you can import the key using the `importCryptoKey()` 
 function takes the exported key as an argument and returns the encryption key which you can use to connect to the
 key-value store.
 
-> [!CAUTION]
-> Make sure to store the encryption key in a secure location. If you lose the encryption key, you will not be able to
-> decrypt the encrypted data. The Key-Value Store does not store the encryption key!
+> [!IMPORTANT]
+> Client-side encryption can be enabled anytime by passing the encryption key to the `connect()` function. Once enabled,
+> it cannot be disabled. If you lose the encryption key, you will not be able to decrypt the encrypted data.
 
 ```typescript
 import { connect, importCryptoKey } from "@gz/kv";
