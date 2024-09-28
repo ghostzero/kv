@@ -1,6 +1,6 @@
 {
   "name": "@gz/kv",
-  "version": "0.1.5",
+  "version": "0.2.0-rc.1",
   "exports": "./mod.ts",
   "license": "MIT",
   "tasks": {

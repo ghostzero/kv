@@ -126,3 +126,54 @@ async function getByEmail(email) {
 }
 ```
 
+## Client-side Encryption
+
+The Key-Value Store supports client-side encryption. This means that the data is encrypted before it is sent to the
+server. The server only sees the encrypted data and cannot decrypt it. The encryption key is stored on the client-side
+and is never sent to the server.
+
+### Generating a key
+
+To generate a new encryption key, you can use the `generateCryptoKey()` function. The `generateCryptoKey()` function
+returns a new encryption key. You can then export the key using the `exportCryptoKey()` function.
+
+The exported key is a Base64-encoded string that you can store in a secure location and import later.
+
+> [!IMPORTANT]
+> 
+
+```typescript
+import { generateCryptoKey, exportCryptoKey } from "@gz/kv";
+
+// generate a new encryption key
+const cryptoKey = await generateCryptoKey();
+const exportedKey = await exportCryptoKey(cryptoKey);
+
+// you can store the exported key in a secure location
+console.log(exportedKey);
+```
+
+### Using the key
+
+To use the encryption key, you can import the key using the `importCryptoKey()` function. The `importCryptoKey()`
+function takes the exported key as an argument and returns the encryption key which you can use to connect to the
+key-value store.
+
+> [!CAUTION]
+> Make sure to store the encryption key in a secure location. If you lose the encryption key, you will not be able to
+> decrypt the encrypted data. The Key-Value Store does not store the encryption key!
+
+```typescript
+import { connect, importCryptoKey } from "@gz/kv";
+
+// import the key
+const encryptionKey = await importCryptoKey(exportedKey);
+
+// connect to the key-value store with the encryption key
+const kv = connect({
+    bucket: '9d1cb4c7-c683-4fa9-bc5f-13f5ad1ba745',
+    accessToken: '9b9634a1-1655-4baf-bdf5-c04feffc68bd',
+    region: 'eu-central-1',
+    encryptionKey
+});
+```

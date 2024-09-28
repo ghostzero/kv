@@ -8,9 +8,10 @@ import { defu } from "npm:defu@6.1.4";
 export class AtomicOperation {
     private checks: AtomicCheck[] = [];
     private operations: KvOperation[] = [];
+    private readonly encryptionKey?: CryptoKey;
 
-    constructor(private url: string) {
-        // Empty
+    constructor(private url: string, encryptionKey?: CryptoKey) {
+        this.encryptionKey = encryptionKey;
     }
 
     /**
@@ -41,7 +42,7 @@ export class AtomicOperation {
      * @param value - The value of the entry
      */
     set(key: KvKey, value: KvValue): this {
-        this.operations.push({ type: "set", key, value });
+        this.operations.push({ type: "set", key, value, encrypted: false });
         return this;
     }
 
@@ -55,17 +56,45 @@ export class AtomicOperation {
         return this;
     }
 
+    /**
+     * Commit the atomic operation.
+     */
     async commit(): Promise<KvCommitResult> {
-        const response = await axios.post(`${this.url}/atomic`, {
+        // Encrypt the values in operations if `encrypted` is false
+        const operationsToSend: KvOperation[] = await Promise.all(
+            this.operations.map(
+                async (operation: KvOperation): Promise<KvOperation> => {
+                    if (
+                        operation.type === "set" && !operation.encrypted &&
+                        this.encryptionKey
+                    ) {
+                        const encryptedValue = await encryptData(
+                            this.encryptionKey,
+                            operation.value,
+                        );
+                        return {
+                            ...operation,
+                            value: encryptedValue,
+                            encrypted: true, // Mark as encrypted
+                        };
+                    }
+                    return operation; // Return as-is for non-encrypted operations
+                },
+            ),
+        );
+
+        // Send the atomic operation request
+        const { data } = await axios.post(`${this.url}/atomic`, {
             checks: this.checks,
-            operations: this.operations,
+            operations: operationsToSend,
         }, {
             headers: {
                 "Content-Type": "application/json",
                 "Accept": "application/json",
             },
         });
-        return response.data;
+
+        return data;
     }
 }
 
@@ -110,13 +139,36 @@ export function connect(options: KvOptions): Kv {
         : `${_options.endpoint}/v1/${_options.bucket}`;
     return {
         async get<T = KvValue>(key: KvKey): Promise<Entry<T>> {
-            const response: AxiosResponse<Entry<T>> = await axios.get(
-                `${url}/${key.join("/")}`,
-                {
-                    headers: _options.headers,
-                },
-            );
-            return response.data;
+            const { data } = await axios.get(`${url}/${key.join("/")}`, {
+                headers: _options.headers,
+            }) as AxiosResponse<Entry<T>>;
+
+            let value: T = data.value;
+
+            if (data.encrypted) {
+                if (!_options.encryptionKey) {
+                    throw new Error(
+                        "Encrypted value received but no encryption key provided",
+                    );
+                }
+                if (typeof data.value !== "object") {
+                    throw new Error(
+                        "Encrypted value received but value is not a object",
+                    );
+                }
+
+                value = await decryptData<T>(
+                    _options.encryptionKey,
+                    value as EncryptedKvValue,
+                );
+            }
+
+            return {
+                key: data.key,
+                value: value as T,
+                version: data.version,
+                encrypted: data.encrypted,
+            };
         },
         getMany<T = KvValue>(
             keys: KvKey[],
@@ -132,24 +184,67 @@ export function connect(options: KvOptions): Kv {
                 params: selector,
                 headers: _options.headers,
             });
+
             return {
                 [Symbol.asyncIterator]: async function* () {
                     for (const entry of response.data) {
-                        yield entry;
+                        let decryptedValue: T = entry.value;
+
+                        // Check if the entry is encrypted and decrypt it
+                        if (entry.encrypted) {
+                            if (!_options.encryptionKey) {
+                                throw new Error(
+                                    "Encrypted value received but no encryption key provided",
+                                );
+                            }
+                            if (typeof entry.value !== "object") {
+                                throw new Error(
+                                    "Encrypted value received but value is not a object",
+                                );
+                            }
+                            decryptedValue = await decryptData<T>(
+                                _options.encryptionKey,
+                                entry.value as EncryptedKvValue,
+                            );
+                        }
+
+                        yield {
+                            ...entry,
+                            value: decryptedValue,
+                        };
                     }
                 },
             } as KvListIterator<T>;
         },
         async set<T = KvValue>(key: KvKey, value: T): Promise<Entry<T>> {
-            const response = await axios.put(`${url}/${key.join("/")}`, {
-                value,
+            let encryptedValue: KvValue | T = value;
+            if (_options.encryptionKey) {
+                encryptedValue = await encryptData(
+                    _options.encryptionKey,
+                    value as KvValue,
+                );
+            }
+
+            const { data } = await axios.put(`${url}/${key.join("/")}`, {
+                value: encryptedValue,
+                encrypted: !!_options.encryptionKey,
             }, {
                 headers: _options.headers,
-            });
-            return response.data;
+            }) as AxiosResponse<Entry<T>>;
+
+            if (data.encrypted) {
+                return {
+                    key,
+                    value,
+                    version: data.version,
+                    encrypted: true,
+                };
+            }
+
+            return data;
         },
         atomic(): AtomicOperation {
-            return new AtomicOperation(url);
+            return new AtomicOperation(url, _options.encryptionKey);
         },
         async delete(key: KvKey): Promise<boolean> {
             return await fetch(`${url}/${key.join("/")}`, {
@@ -165,6 +260,107 @@ export function connect(options: KvOptions): Kv {
             }).then((): boolean => true);
         },
     };
+}
+
+/**
+ * Generate a random Initialization Vector for AES-GCM.
+ */
+function generateIV(): Uint8Array {
+    return crypto.getRandomValues(new Uint8Array(12)); // 12 bytes for GCM
+}
+
+/**
+ * Encrypt data using the provided key.
+ *
+ * @param key - The key to use for encryption
+ * @param data - The data to encrypt
+ */
+async function encryptData(key: CryptoKey, data: KvValue): Promise<KvValue> {
+    const iv = generateIV();
+    const encodedData = new TextEncoder().encode(JSON.stringify(data));
+
+    const encrypted = await crypto.subtle.encrypt(
+        { name: "AES-GCM", iv: iv },
+        key,
+        encodedData,
+    );
+
+    const ct = btoa(String.fromCharCode(...new Uint8Array(encrypted)));
+
+    return { ct, iv };
+}
+
+/**
+ * Decrypt data using the provided key.
+ *
+ * @param key - The key to use for decryption
+ * @param data - The data to decrypt (contains ct and IV)
+ * @returns The decrypted KvValue object
+ */
+async function decryptData<T = KvValue>(
+    key: CryptoKey,
+    data: EncryptedKvValue,
+): Promise<T> {
+    const encryptedData = new Uint8Array(
+        Array.from(atob(data.ct), (c) => c.charCodeAt(0)),
+    );
+
+    try {
+        const decrypted = await crypto.subtle.decrypt(
+            { name: "AES-GCM", iv: new Uint8Array(data.iv) },
+            key,
+            encryptedData,
+        );
+
+        const decoded = new TextDecoder().decode(decrypted);
+        return JSON.parse(decoded);
+    } catch (error) {
+        console.error("Decryption failed:", error);
+        throw new Error("Decryption failed"); // Handle decryption failure
+    }
+}
+
+/**
+ * Generate a new CryptoKey for encryption and decryption.
+ */
+export async function generateCryptoKey(): Promise<CryptoKey> {
+    return await crypto.subtle.generateKey(
+        {
+            name: "AES-GCM",
+            length: 256,
+        },
+        true,
+        ["encrypt", "decrypt"],
+    );
+}
+
+/**
+ * Export a CryptoKey to a base64 string.
+ *
+ * @param key - The key to export
+ */
+export async function exportCryptoKey(key: CryptoKey): Promise<string> {
+    const rawKey = await crypto.subtle.exportKey("raw", key);
+    const keyBuffer = new Uint8Array(rawKey);
+    return btoa(String.fromCharCode(...keyBuffer));
+}
+
+/**
+ * Import a CryptoKey from a base64 string.
+ *
+ * @param base64Key - The base64 string to import
+ */
+export async function importCryptoKey(base64Key: string): Promise<CryptoKey> {
+    const rawKey = new Uint8Array(
+        Array.from(atob(base64Key), (c) => c.charCodeAt(0)),
+    );
+    return await crypto.subtle.importKey(
+        "raw",
+        rawKey,
+        { name: "AES-GCM" },
+        true, // Extractable key
+        ["encrypt", "decrypt"], // Usage for encryption and decryption
+    );
 }
 
 /**
@@ -221,15 +417,40 @@ export interface Kv {
 export type KvKey = string[];
 
 /**
- * The value of an entry in the key-value store.
+ * Represents a JSON value.
  */
-export type KvValue =
+export type JsonValue =
     | string
     | number
     | boolean
     | null
-    | Record<string, unknown>
-    | unknown[];
+    | JsonArray
+    | JsonObject;
+
+/**
+ * Represents a JSON object.
+ */
+export interface JsonObject {
+    [key: string]: JsonValue;
+}
+
+/**
+ * Represents a JSON array.
+ */
+export interface JsonArray extends Array<JsonValue> {}
+
+/**
+ * The value of an entry in the key-value store.
+ */
+export type KvValue = JsonValue | EncryptedKvValue;
+
+/**
+ * The encrypted value of an entry in the key-value store.
+ */
+export type EncryptedKvValue = {
+    ct: string;
+    iv: Uint8Array;
+};
 
 /**
  * Key-value list selector.
@@ -253,6 +474,7 @@ export interface KvSetOperation {
     type: "set";
     key: KvKey;
     value: KvValue;
+    encrypted: boolean;
 }
 
 /**
@@ -277,6 +499,7 @@ export interface Entry<T = unknown> {
     key: KvKey;
     value: T;
     version: number | null;
+    encrypted: boolean;
 }
 
 /**
@@ -303,4 +526,5 @@ export interface KvOptions {
     endpoint?: string;
     region?: string;
     headers?: Record<string, string>;
+    encryptionKey?: CryptoKey;
 }
