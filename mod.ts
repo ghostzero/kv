@@ -116,18 +116,22 @@ export class AtomicOperation {
  * console.log(res.value.name) // GhostZero
  * ```
  */
-export function connect(options: KvOptions): Kv {
+export async function connect(options: KvOptions = {}): Promise<Kv> {
+    const env = getEnv(options.ignoreEnv);
     const _options = defu(options, {
-        accessToken: null,
-        endpoint: null,
-        bucket: null,
-        region: "eu-central-1",
+        accessToken: env.KV_ACCESS_TOKEN,
+        endpoint: env.KV_ENDPOINT,
+        bucket: env.KV_BUCKET,
+        region: env.KV_REGION ?? "eu-central-1",
+        encryptionKey: env.KV_ENCRYPTION_KEY
+            ? await importCryptoKey(env.KV_ENCRYPTION_KEY)
+            : undefined,
         headers: {
             "Content-Type": "application/json",
             "Accept": "application/json",
             "Authorization": `Bearer ${options.accessToken}`,
         },
-    });
+    } as KvOptions);
     if (!_options.bucket) {
         throw new Error("The `bucket` option is required");
     }
@@ -170,11 +174,14 @@ export function connect(options: KvOptions): Kv {
                 encrypted: data.encrypted,
             };
         },
-        getMany<T = KvValue>(
+        async getMany<T = KvValue>(
             keys: KvKey[],
         ): Promise<Entry<T>[]> {
+            const kvInstance = await this;
             return Promise.all(
-                keys.map((key: KvKey) => this.get(key) as Promise<Entry<T>>),
+                keys.map((key: KvKey) =>
+                    kvInstance.get(key) as Promise<Entry<T>>
+                ),
             );
         },
         async list<T = KvValue>(
@@ -260,6 +267,26 @@ export function connect(options: KvOptions): Kv {
             }).then((): boolean => true);
         },
     };
+}
+
+/**
+ * Find environment variables by either checking process.env or Deno.env.
+ */
+function getEnv(
+    ignoreEnv: boolean | undefined,
+): Record<string, string> {
+    if (ignoreEnv) {
+        return {};
+    }
+    // @ts-ignore
+    if (typeof process !== "undefined" && process.env) {
+        // @ts-ignore
+        return process.env;
+    }
+    if (typeof Deno !== "undefined" && Deno.env) {
+        return Deno.env.toObject();
+    }
+    return {};
 }
 
 /**
@@ -521,10 +548,11 @@ export interface KvCommitResult {
  * Key-value client options.
  */
 export interface KvOptions {
-    bucket: string;
-    accessToken: string;
+    bucket?: string;
+    accessToken?: string;
     endpoint?: string;
     region?: string;
     headers?: Record<string, string>;
     encryptionKey?: CryptoKey;
+    ignoreEnv?: boolean;
 }

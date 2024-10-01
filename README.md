@@ -19,12 +19,26 @@ To open the key-value store, run the following command:
 ```ts
 import { connect } from "@gz/kv";
 
-const kv = connect({
+const kv = await connect({
     bucket: '9d1cb4c7-c683-4fa9-bc5f-13f5ad1ba745',
     accessToken: '9b9634a1-1655-4baf-bdf5-c04feffc68bd',
     region: 'eu-central-1'
 });
 ```
+
+### Environment Variables
+
+You can also use environment variables to configure the key-value store. The key-value store client will automatically
+use the environment variables if they are set.
+
+- `KV_ACCESS_TOKEN` - The access token for the key-value store.
+- `KV_ENDPOINT` - The endpoint for the key-value store.
+- `KV_BUCKET` - The bucket for the key-value store.
+- `KV_REGION` - The region for the key-value store.
+- `KV_ENCRYPTION_KEY` - The encryption key for the key-value store.
+
+If you want to ignore your environment variables, you can pass the `ignoreEnv` option to the `connect()` function. This
+will prevent the key-value store client from using these environment variables.
 
 ## Creating a User interface
 
@@ -171,7 +185,7 @@ import { connect, importCryptoKey } from "@gz/kv";
 const encryptionKey = await importCryptoKey(exportedKey);
 
 // connect to the key-value store with the encryption key
-const kv = connect({
+const kv = await connect({
     bucket: '9d1cb4c7-c683-4fa9-bc5f-13f5ad1ba745',
     accessToken: '9b9634a1-1655-4baf-bdf5-c04feffc68bd',
     region: 'eu-central-1',

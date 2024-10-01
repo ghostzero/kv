@@ -1,3 +1,4 @@
 .idea
 deno.lock
-playground.ts
+playground*.ts
+.env
