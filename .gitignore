@@ -1,4 +1,5 @@
 .idea
+coverage
 deno.lock
 playground*.ts
 .env

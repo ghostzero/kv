@@ -96,7 +96,7 @@ transaction. If any of the operations fail, the entire transaction is rolled bac
 const key = ['users', '1'];
 const value: User = {id: '1', name: 'GhostZero', email: 'example@example.com'};
 
-const res = kv.atomic()
+const res = await kv.atomic()
     .check({key, version: null /* or a version */})
     .set(key, value)
     .commit();
@@ -170,25 +170,34 @@ console.log(exportedKey);
 
 ### Using the key
 
-To use the encryption key, you can import the key using the `importCryptoKey()` function. The `importCryptoKey()`
-function takes the exported key as an argument and returns the encryption key which you can use to connect to the
-key-value store.
+To use the encryption key, you need to use the `KeyManager` class. The `KeyManager` class manages the encryption keys
+and allows you to import multiple keys (which can be useful for key rotation).
 
 > [!IMPORTANT]
-> Client-side encryption can be enabled anytime by passing the encryption key to the `connect()` function. Once enabled,
-> it cannot be disabled. If you lose the encryption key, you will not be able to decrypt the encrypted data.
+> Client-side encryption can be enabled anytime by passing the `KeyManager` to the `connect()` function. If you
+> disable client-side encryption, new data will not be encrypted, but existing data will remain encrypted.
+
+> [!IMPORTANT]
+> The KeyManager utilizes only active keys for encryption. You can add multiple keys to the KeyManager, but only one key
+> can be designated as active at a time. The active key is defined as the most recently added key with the active flag
+> set to true. If there is no active key, the KeyManager will refrain from encrypting data and will use the keys solely
+> for decryption.
 
 ```typescript
-import { connect, importCryptoKey } from "@gz/kv";
+import { connect, KeyManager } from "@gz/kv";
 
-// import the key
-const encryptionKey = await importCryptoKey(exportedKey);
+// example 1: import the key from environment variables
+const keyManager = await new KeyManager().fromEnv();
+
+// example 2: import the key from a Base64-encoded string
+const keyManager = new KeyManager();
+await keyManager.addKey(exportedKey, true);
 
 // connect to the key-value store with the encryption key
 const kv = await connect({
     bucket: '9d1cb4c7-c683-4fa9-bc5f-13f5ad1ba745',
     accessToken: '9b9634a1-1655-4baf-bdf5-c04feffc68bd',
     region: 'eu-central-1',
-    encryptionKey
+    keyManager
 });
 ```
