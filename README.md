@@ -201,3 +201,30 @@ const kv = await connect({
     keyManager
 });
 ```
+
+### Manage what data is encrypted
+
+By default, all data is encrypted. If you want to disable encryption for a specific key-value pair, you can use the
+`addOnlyKvKeys([...])` or `addExceptKvKeys([...])` methods on the `KeyManager` class.
+
+> [!IMPORTANT]
+> When using `*` as a key, it acts as a wildcard and matches all keys after it. For example, `['users', '*']` will match
+> all keys that start with `users`.
+
+**Example: Encrypt only the `users` key**
+
+```typescript
+const keyManager = new KeyManager();
+
+// only encrypt the 'users' key
+keyManager.addOnlyKvKeys(['users', '*']);
+```
+
+**Example: Encrypt all keys except the `users` key**
+
+```typescript
+const keyManager = new KeyManager();
+
+// encrypt all keys except the 'users' key
+keyManager.addExceptKvKeys(['users', '*']);
+```

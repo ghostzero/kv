@@ -8,11 +8,8 @@ import { defu } from "npm:defu@6.1.4";
 export class AtomicOperation {
     private checks: AtomicCheck[] = [];
     private operations: KvOperation[] = [];
-    private readonly keyManager?: KeyManager;
 
-    constructor(private url: string, keyManager?: KeyManager) {
-        this.keyManager = keyManager;
-    }
+    constructor(private url: string, private options: KvOptions) {}
 
     /**
      * Add a check to the atomic operation.
@@ -66,10 +63,10 @@ export class AtomicOperation {
                 async (operation: KvOperation): Promise<KvOperation> => {
                     if (
                         operation.type === "set" && !operation.encrypted &&
-                        this.keyManager?.isAvailable()
+                        this.options.keyManager?.shouldEncrypt(operation.key)
                     ) {
                         const encryptedValue = await encryptData(
-                            this.keyManager,
+                            this.options.keyManager,
                             operation.value,
                         );
                         return {
@@ -88,10 +85,7 @@ export class AtomicOperation {
             checks: this.checks,
             operations: operationsToSend,
         }, {
-            headers: {
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-            },
+            headers: this.options.headers,
         });
 
         return data;
@@ -149,7 +143,7 @@ export async function connect(options: KvOptions = {}): Promise<Kv> {
             let value: T = data.value;
 
             if (data.encrypted) {
-                if (!_options.keyManager?.isAvailable()) {
+                if (!_options.keyManager?.shouldEncrypt(key)) {
                     throw new Error(
                         "Encrypted value received but no key manager available",
                     );
@@ -198,7 +192,9 @@ export async function connect(options: KvOptions = {}): Promise<Kv> {
 
                         // Check if the entry is encrypted and decrypt it
                         if (entry.encrypted) {
-                            if (!_options.keyManager?.isAvailable()) {
+                            if (
+                                !_options.keyManager?.shouldEncrypt(entry.key)
+                            ) {
                                 throw new Error(
                                     "Encrypted value received but no key manager available",
                                 );
@@ -224,7 +220,7 @@ export async function connect(options: KvOptions = {}): Promise<Kv> {
         },
         async set<T = KvValue>(key: KvKey, value: T): Promise<Entry<T>> {
             let encryptedValue: KvValue | T = value;
-            if (_options.keyManager?.isAvailable()) {
+            if (_options.keyManager?.shouldEncrypt(key)) {
                 encryptedValue = await encryptData(
                     _options.keyManager,
                     value as KvValue,
@@ -233,7 +229,7 @@ export async function connect(options: KvOptions = {}): Promise<Kv> {
 
             const { data } = await axios.put(`${url}/${key.join("/")}`, {
                 value: encryptedValue,
-                encrypted: !!_options.keyManager?.isAvailable(),
+                encrypted: !!_options.keyManager?.shouldEncrypt(key),
             }, {
                 headers: _options.headers,
             }) as AxiosResponse<Entry<T>>;
@@ -250,7 +246,7 @@ export async function connect(options: KvOptions = {}): Promise<Kv> {
             return data;
         },
         atomic(): AtomicOperation {
-            return new AtomicOperation(url, _options.keyManager);
+            return new AtomicOperation(url, _options);
         },
         async delete(key: KvKey): Promise<boolean> {
             return await fetch(`${url}/${key.join("/")}`, {
@@ -485,6 +481,8 @@ export interface Kv {
 export class KeyManager {
     private keys: JwtCryptoKey[] = [];
     private activeKid: string = "";
+    private exceptKvKeys: KvKey[] = [];
+    private onlyKvKeys: KvKey[] = [];
 
     constructor() {}
 
@@ -599,6 +597,65 @@ export class KeyManager {
         await this.addKey(env.KV_ENCRYPTION_KEY, active);
 
         return this;
+    }
+
+    /**
+     * Adds keys where encryption should not be applied
+     *
+     * @param exceptKeys
+     */
+    addExceptKvKeys(exceptKeys: KvKey[]) {
+        this.exceptKvKeys.push(...exceptKeys);
+    }
+
+    /**
+     * Adds keys where encryption should only be applied
+     *
+     * @param onlyKeys
+     */
+    addOnlyKvKeys(onlyKeys: KvKey[]) {
+        this.onlyKvKeys.push(...onlyKeys);
+    }
+
+    /**
+     * Check if a key should be encrypted.
+     *
+     * @param key
+     */
+    shouldEncrypt(key: string[]): boolean {
+        // If no key manager is available, do not encrypt
+        if (!this.isAvailable()) {
+            return false;
+        }
+
+        // Check the onlyKvKeys first
+        if (this.onlyKvKeys.length > 0) {
+            const isInOnlyKeys = this.onlyKvKeys.some((keyPath) =>
+                this.matchKeyPath(keyPath, key)
+            );
+            if (!isInOnlyKeys) {
+                return false; // If not in onlyKvKeys, do not encrypt
+            }
+        }
+
+        // Check the exceptKvKeys next
+        return !this.exceptKvKeys.some((keyPath) =>
+            this.matchKeyPath(keyPath, key)
+        );
+    }
+
+    /**
+     * Utility function to match key paths, supporting wildcards
+     *
+     * @param pattern - The pattern to match
+     * @param key - The key to match
+     */
+    private matchKeyPath(pattern: KvKey, key: KvKey): boolean {
+        if (pattern.length !== key.length) return false;
+
+        return pattern.every((part, index) =>
+            part === "*" || part === key[index]
+        );
     }
 }
 

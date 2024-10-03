@@ -356,3 +356,104 @@ async function assertThrowsAsync(fn: () => Promise<void>, msg: string) {
         throw new AssertionError("Function did not throw");
     }
 }
+
+Deno.test(async function testSpecificKeys() {
+    const keyManager = new KeyManager();
+    await keyManager.addKey(
+        await exportCryptoKey(await generateCryptoKey(), "foo"),
+        true,
+    );
+
+    keyManager.addOnlyKvKeys([
+        ["foo", "*"],
+    ]);
+
+    keyManager.addExceptKvKeys([
+        ["foo", "bar"],
+        ["bar", "baz"],
+    ]);
+
+    // Case 1: ["foo", "test"] should return true (because it's in onlyKeys)
+    let result = keyManager.shouldEncrypt(["foo", "test"]);
+    assertEquals(result, true, `Expected true but got ${result} for ["foo", "test"]`);
+
+    // Case 2: ["foo", "bar"] should return false (because it's in exceptKeys)
+    result = keyManager.shouldEncrypt(["foo", "bar"]);
+    assertEquals(result, false, `Expected false but got ${result} for ["foo", "bar"]`);
+
+    // Case 3: ["bar", "baz"] should return false (because it's in exceptKeys)
+    result = keyManager.shouldEncrypt(["bar", "baz"]);
+    assertEquals(result, false, `Expected false but got ${result} for ["bar", "baz"]`);
+
+    // Case 4: ["bar", "qux"] should return false (because it's not in onlyKeys)
+    result = keyManager.shouldEncrypt(["bar", "qux"]);
+    assertEquals(result, false, `Expected false but got ${result} for ["bar", "qux"]`);
+
+    // Case 5: ["foo", "qux"] should return true (because it's in onlyKeys with wildcard)
+    result = keyManager.shouldEncrypt(["foo", "qux"]);
+    assertEquals(result, true, `Expected true but got ${result} for ["foo", "qux"]`);
+
+    // Case 6: ["baz", "qux"] should return false (because it's neither in exceptKeys nor excluded by onlyKeys)
+    result = keyManager.shouldEncrypt(["baz", "qux"]);
+    assertEquals(result, false, `Expected true but got ${result} for ["baz", "qux"]`);
+});
+
+// Test only addExceptKeys functionality
+Deno.test(async function testOnlyExceptKeys() {
+    const keyManager = new KeyManager();
+    await keyManager.addKey(
+        await exportCryptoKey(await generateCryptoKey(), "foo"),
+        true,
+    );
+    keyManager.addExceptKvKeys([
+        ["foo", "bar"],
+        ["baz", "qux"],
+    ]);
+
+    // No onlyKeys defined, should not encrypt if in exceptKeys
+    let result;
+
+    // Case 1: ["foo", "bar"] should return false (because it's in exceptKeys)
+    result = keyManager.shouldEncrypt(["foo", "bar"]);
+    assertEquals(result, false, `Expected false but got ${result} for ["foo", "bar"]`);
+
+    // Case 2: ["baz", "qux"] should return false (because it's in exceptKeys)
+    result = keyManager.shouldEncrypt(["baz", "qux"]);
+    assertEquals(result, false, `Expected false but got ${result} for ["baz", "qux"]`);
+
+    // Case 2: ["baz", "qux", "foo"] should return false (because it's in exceptKeys)
+    result = keyManager.shouldEncrypt(["baz", "qux", "foo"]);
+    assertEquals(result, true, `Expected false but got ${result} for ["baz", "qux", "foo"]`);
+
+    // Case 3: ["qux", "foo"] should return true (not in exceptKeys and no onlyKeys)
+    result = keyManager.shouldEncrypt(["qux", "foo"]);
+    assertEquals(result, true, `Expected true but got ${result} for ["qux", "foo"]`);
+});
+
+// Test only addOnlyKeys functionality
+Deno.test(async function testOnlyOnlyKeys() {
+    const keyManager = new KeyManager();
+    await keyManager.addKey(
+        await exportCryptoKey(await generateCryptoKey(), "foo"),
+        true,
+    );
+    keyManager.addOnlyKvKeys([
+        ["foo", "*"],
+        ["bar", "baz"],
+    ]);
+
+    // No exceptKeys defined, should encrypt if in onlyKeys
+    let result;
+
+    // Case 1: ["foo", "test"] should return true (because it's in onlyKeys)
+    result = keyManager.shouldEncrypt(["foo", "test"]);
+    assertEquals(result, true, `Expected true but got ${result} for ["foo", "test"]`);
+
+    // Case 2: ["bar", "baz"] should return true (because it's in onlyKeys)
+    result = keyManager.shouldEncrypt(["bar", "baz"]);
+    assertEquals(result, true, `Expected true but got ${result} for ["bar", "baz"]`);
+
+    // Case 3: ["baz", "qux"] should return false (not in onlyKeys)
+    result = keyManager.shouldEncrypt(["baz", "qux"]);
+    assertEquals(result, false, `Expected false but got ${result} for ["baz", "qux"]`);
+});
