@@ -217,7 +217,7 @@ By default, all data is encrypted. If you want to disable encryption for a speci
 const keyManager = new KeyManager();
 
 // only encrypt the 'users' key
-keyManager.addOnlyKvKeys(['users', '*']);
+keyManager.addOnlyKvKeys([['users', '*']]);
 ```
 
 **Example: Encrypt all keys except the `users` key**
@@ -226,5 +226,5 @@ keyManager.addOnlyKvKeys(['users', '*']);
 const keyManager = new KeyManager();
 
 // encrypt all keys except the 'users' key
-keyManager.addExceptKvKeys(['users', '*']);
+keyManager.addExceptKvKeys([['users', '*']]);
 ```
