@@ -228,3 +228,62 @@ const keyManager = new KeyManager();
 // encrypt all keys except the 'users' key
 keyManager.addExceptKvKeys([['users', '*']]);
 ```
+
+## Frontend-Safe Access with JWT
+
+Normally, `accessToken` is a bucket-wide secret — it must stay on the backend. If you're building a widget where
+viewers only need to read/write **their own data** (a personal to-do list, per-viewer settings, ...), you don't have
+to write backend code to proxy that. Connect with a user JWT instead of an `accessToken`, and the server enforces —
+per request — that the JWT's owner can only touch key paths configured for their user ID.
+
+> [!IMPORTANT]
+> This requires server-side setup first: the kvdb bucket needs a JWT secret and a set of allowed key path patterns
+> configured. See the [kvdb README](https://github.com/ghostzero/kvdb#frontend-jwt-access-baas) for the full
+> server-side guide. Nothing below will work against a bucket that hasn't been configured for JWT access.
+
+```ts
+import { connect } from "@gz/kv";
+
+const kv = await connect({
+    bucket: '9d1cb4c7-c683-4fa9-bc5f-13f5ad1ba745',
+    jwt: userJwt, // a JWT for the currently signed-in viewer, sub = their user id
+});
+```
+
+`jwt` and `accessToken` are mutually exclusive credentials — if both are set, `jwt` wins. Passing `jwt` also routes
+requests through the server's frontend-safe endpoint rather than the backend one, so an `accessToken`-shaped secret
+accidentally left in the same options object is never sent.
+
+**Example: a per-viewer to-do list**
+
+Assuming the bucket has a rule allowing `['todos', '{user_id}', '*']` for `read`/`write` (see the kvdb README for how
+to configure this), a widget can read and write only the current viewer's own todos:
+
+```ts
+const key = ['todos', currentUserId, 'task1'];
+
+await kv.set(key, { text: 'Buy milk', done: false });
+
+const entry = await kv.get(key);
+console.log(entry.value); // { text: 'Buy milk', done: false }
+
+await kv.delete(key);
+```
+
+Trying to read or write a key path the JWT isn't allowed to touch — another user's data, or a path with no matching
+rule at all — fails with an HTTP 403. An invalid, expired, or wrong-signature JWT fails with a 401. Both are thrown as
+errors by the underlying HTTP client:
+
+```ts
+try {
+    await kv.get(['todos', someOtherUserId, 'task1']);
+} catch (e) {
+    // e.g. "Request failed with status code 403"
+    console.error(e.message);
+}
+```
+
+> [!IMPORTANT]
+> `list()` and `atomic()` are not available over a JWT connection — they operate on a set of keys rather than a
+> single key path, which the server can't yet authorize per-request. Use `get()`/`set()`/`delete()` on individual
+> keys from the frontend, and keep any listing or batched/atomic operations on the backend with an `accessToken`.
