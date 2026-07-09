@@ -114,24 +114,36 @@ export async function connect(options: KvOptions = {}): Promise<Kv> {
     const env = getEnv(options.ignoreEnv);
     const _options = defu(options, {
         accessToken: env.KV_ACCESS_TOKEN,
+        jwt: env.KV_JWT,
         endpoint: env.KV_ENDPOINT,
         bucket: env.KV_BUCKET,
         region: env.KV_REGION ?? "eu-central-1",
-        headers: {
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "Authorization": `Bearer ${options.accessToken}`,
-        },
     } as KvOptions);
     if (!_options.bucket) {
         throw new Error("The `bucket` option is required");
     }
-    if (!_options.accessToken) {
-        throw new Error("The `accessToken` option is required");
+    // `jwt` takes precedence so a frontend-issued user token always wins over
+    // a stale/leaked backend accessToken carried in the same options object.
+    const credential = _options.jwt ?? _options.accessToken;
+    if (!credential) {
+        throw new Error("Either the `jwt` or `accessToken` option is required");
     }
+    // Built after credential resolution (not inside the defu defaults above)
+    // so env-sourced tokens are reflected in the header instead of baking in
+    // `Bearer undefined` at default-construction time.
+    _options.headers = defu(options.headers, {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "Authorization": `Bearer ${credential}`,
+    } as Record<string, string>);
+    // A `jwt` credential is verified by the server's frontend-safe route
+    // group (`/v1/frontend/...`), which is authorized per-request against
+    // declarative key path rules instead of a bucket-wide accessToken — it
+    // is not just a different header on the same backend route.
+    const versionPath = _options.jwt ? "v1/frontend" : "v1";
     const url: string = !_options.endpoint
-        ? `https://kv.${_options.region}.kv-db.dev/v1/${_options.bucket}`
-        : `${_options.endpoint}/v1/${_options.bucket}`;
+        ? `https://kv.${_options.region}.kv-db.dev/${versionPath}/${_options.bucket}`
+        : `${_options.endpoint}/${versionPath}/${_options.bucket}`;
     _options.endpoint = url;
     return {
         options: _options,
@@ -306,7 +318,7 @@ async function encryptData(
     const encodedData = new TextEncoder().encode(JSON.stringify(data));
 
     const encrypted = await crypto.subtle.encrypt(
-        { name: "AES-GCM", iv: iv },
+        { name: "AES-GCM", iv: iv.buffer as ArrayBuffer },
         jwk.key,
         encodedData,
     );
@@ -788,7 +800,16 @@ export interface KvCommitResult {
  */
 export interface KvOptions {
     bucket?: string;
+    /**
+     * A backend-only, bucket-scoped secret. Mutually usable with `jwt` — if
+     * both are set, `jwt` takes precedence.
+     */
     accessToken?: string;
+    /**
+     * A user JWT for frontend-safe, identity-scoped access. Takes precedence
+     * over `accessToken` when both are set.
+     */
+    jwt?: string;
     endpoint?: string;
     region?: string;
     headers?: Record<string, string>;

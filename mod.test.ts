@@ -19,24 +19,76 @@ interface Preferences extends Record<string, any> {
     language: string;
 }
 
-const options: KvOptions = {
-    endpoint: "http://localhost:8000",
-    bucket: "9d1cb4c7-c683-4fa9-bc5f-13f5ad1ba745",
-    accessToken: "9d264a49-ca25-461a-9543-616af8ba7fea",
-};
+const KV_ENDPOINT = Deno.env.get("KV_TEST_ENDPOINT") ?? "http://localhost:8000";
+
+/**
+ * Provisions a fresh bucket (and its default read/write access token)
+ * against a live kvdb server, so the test suite is self-contained instead of
+ * depending on a specific bucket/token having been seeded beforehand.
+ */
+async function createTestBucket(): Promise<KvOptions> {
+    const response = await fetch(`${KV_ENDPOINT}/v1/buckets`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+        body: JSON.stringify({
+            email: `kv-test-${crypto.randomUUID()}@example.com`,
+        }),
+    });
+
+    if (!response.ok) {
+        throw new Error(
+            `Failed to provision a test bucket (status ${response.status}). Is a kvdb server running at ${KV_ENDPOINT}?`,
+        );
+    }
+
+    const bucket = await response.json();
+
+    return {
+        endpoint: KV_ENDPOINT,
+        bucket: bucket.id,
+        accessToken: bucket.access_tokens[0].secret,
+    };
+}
+
+const options: KvOptions = await createTestBucket();
 
 Deno.test(async function testManualKvConfiguration() {
     await assertThrowsAsync(async () => {
         await connect({ ...options, accessToken: undefined });
-    }, "The `accessToken` option is required");
+    }, "Either the `jwt` or `accessToken` option is required");
 
     const kv = await connect({ ...options, endpoint: undefined });
     assertEquals(
         kv.options.endpoint,
-        "https://kv.eu-central-1.kv-db.dev/v1/9d1cb4c7-c683-4fa9-bc5f-13f5ad1ba745",
+        `https://kv.eu-central-1.kv-db.dev/v1/${options.bucket}`,
     );
 
     await connect(options);
+});
+
+Deno.test(async function testFrontendJwtConfiguration() {
+    const kv = await connect({
+        ...options,
+        accessToken: undefined,
+        jwt: "eyJhbGciOiJIUzI1NiJ9.fake.signature",
+    });
+
+    assertEquals(
+        kv.options.headers?.["Authorization"],
+        "Bearer eyJhbGciOiJIUzI1NiJ9.fake.signature",
+    );
+});
+
+Deno.test(async function testJwtTakesPrecedenceOverAccessToken() {
+    const kv = await connect({
+        ...options,
+        jwt: "user-jwt",
+    });
+
+    assertEquals(kv.options.headers?.["Authorization"], "Bearer user-jwt");
 });
 
 Deno.test(async function testAutomaticKvConfiguration() {
@@ -52,13 +104,10 @@ Deno.test(async function testAutomaticKvConfiguration() {
 
     assertEquals(
         kv.options.endpoint,
-        "http://localhost:8000/v1/9d1cb4c7-c683-4fa9-bc5f-13f5ad1ba745",
+        `${options.endpoint}/v1/${options.bucket}`,
     );
-    assertEquals(kv.options.bucket, "9d1cb4c7-c683-4fa9-bc5f-13f5ad1ba745");
-    assertEquals(
-        kv.options.accessToken,
-        "9d264a49-ca25-461a-9543-616af8ba7fea",
-    );
+    assertEquals(kv.options.bucket, options.bucket);
+    assertEquals(kv.options.accessToken, options.accessToken);
 });
 
 Deno.test(async function testKv() {
@@ -348,7 +397,7 @@ async function assertThrowsAsync(fn: () => Promise<void>, msg: string) {
     let didThrow = false;
     try {
         await fn();
-    } catch (e) {
+    } catch (e: any) {
         didThrow = true;
         assertEquals(e.message, msg);
     }
@@ -457,3 +506,4 @@ Deno.test(async function testOnlyOnlyKeys() {
     result = keyManager.shouldEncrypt(["baz", "qux"]);
     assertEquals(result, false, `Expected false but got ${result} for ["baz", "qux"]`);
 });
+
